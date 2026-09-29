@@ -53,11 +53,11 @@ homework runner.
 ```mermaid
 flowchart LR
     A[Receipt images] --> B[Encode each image as a data URL]
-    B --> C[LangChain prompt and DeepSeek vision model]
+    B --> C[LangChain prompt and DeepSeek model]
     C --> D[Extract subtotal, rounding, and discounts as JSON]
     D --> E[Calculate both amounts with Decimal]
     E --> F[Sum across all receipts]
-    F --> G[Two HKD answers in results.csv]
+    F --> G[HKD answers in results.csv]
 ```
 
 The program builds a LangChain prompt and using `deepseek-v4-flash-vision-exp`, then processes each receipt image independently. For each receipt, the model extracts the subtotal before rounding, the signed rounding adjustment, and each monetary discount into JSON. Python uses `Decimal` to calculate the amount paid as `subtotal + rounding` and the amount without discounts as `subtotal + the absolute value of each discount`. It sums these amounts across all receipts and returns one HKD amount for each required question.
