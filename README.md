@@ -49,5 +49,6 @@ homework runner.
 
 
 ## Homework 1 solution: 
-> to students: please fill your solution description here.
+
+The program builds a LangChain prompt using `deepseek-v4-flash-vision-exp`, then processes each receipt image independently. For each receipt, the model extracts the subtotal before rounding, the signed rounding adjustment, and each monetary discount into JSON. Python uses `Decimal` to calculate the amount paid as `subtotal + rounding` and the amount without discounts as `subtotal + the absolute value of each discount`. It sums these amounts across all receipts and returns one HKD amount for each required question.
 
