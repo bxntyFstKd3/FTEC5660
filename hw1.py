@@ -53,34 +53,83 @@ def image_data_url(path: Path) -> str:
 
 
 def build_chain() -> Any:
-    """Create and return your LangChain chain once.
+    from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+    from langchain_deepseek import ChatDeepSeek
 
-    Suggested imports:
-        from langchain_core.prompts import ChatPromptTemplate
-        from langchain_deepseek import ChatDeepSeek
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """Read one Hong Kong supermarket receipt carefully.
+Extract these fields:
+- subtotal: the SUBTOTAL after discounts, before ROUNDING. If it is not
+  printed, infer it from the final payment and the rounding adjustment.
+- rounding: the signed ROUNDING adjustment (use 0.00 if absent).
+- discounts: one positive HKD amount for each promotion, coupon, member,
+  app, packaging-damage, percentage, or other discount that reduced the
+  bill. For percentage discounts use the monetary reduction, not the
+  percentage. Include each reduction once, even if printed as negative.
+  Ignore ROUNDING, cash tendered, change, and loyalty points. Ignore a
+  savings summary if it duplicates detailed discounts; use it if it is
+  the only record of a discount.
+Return only valid JSON with keys subtotal, rounding, discounts.
+Use decimal strings without currency symbols for subtotal and rounding,
+and an array of decimal strings for discounts. No explanation."""),
+        MessagesPlaceholder("receipt_message"),
+    ])
 
-    Use the vision-capable DeepSeek Flash model named
-    ``deepseek-v4-flash-vision-exp``. The API key is loaded from .env.
-    """
-    ### YOUR CODE HERE
-    return None
+    model = ChatDeepSeek(
+        model="deepseek-v4-flash-vision-exp",
+        temperature=0,
+        timeout=60,
+        max_retries=1,
+    )
+    return prompt | model
 
 
 def answer_queries(chain: Any, images: list[Path]) -> dict[str, Any]:
-    """Run your chain and return one response for each exact query string.
+    from langchain_core.messages import HumanMessage
 
-    ``images`` contains every receipt in the selected folder. A valid return
-    value looks like:
+    def money(value: Any) -> Decimal:
+        cleaned = (str(value).strip().replace(",", "")
+                   .replace("HK$", "").replace("$", "")
+                   .replace("−", "-"))
+        return Decimal(cleaned)
 
-        {QUERY_1: "HK$123.40", QUERY_2: "HK$150.00"}
+    requests = [
+        {"receipt_message": [HumanMessage(content=[
+            {"type": "text", "text": "Extract the receipt fields as JSON."},
+            {"type": "image_url", "image_url": {"url": image_data_url(path)}},
+        ])]}
+        for path in images
+    ]
+    replies = chain.batch(requests, config={"max_concurrency": 3})
 
-    Use the provided ``image_data_url(path)`` helper to put local images in
-    multimodal human messages. LangChain's ``batch`` method is one simple way
-    to process independent receipt-extraction prompts in parallel.
-    """
-    ### YOUR CODE HERE
-    _ = (chain, images)
-    return {QUERY_1: DUMMY_RESPONSE, QUERY_2: DUMMY_RESPONSE}
+    total_paid = Decimal("0.00")
+    total_without_discount = Decimal("0.00")
+
+    for path, reply in zip(images, replies):
+        match = re.search(r"\{.*\}", response_text(reply), re.DOTALL)
+        if match is None:
+            raise ValueError(f"No JSON returned for {path.name}")
+
+        fields = json.loads(match.group())
+        subtotal = money(fields["subtotal"])
+        rounding = money(fields["rounding"])
+        discounts = fields["discounts"]
+
+        if not isinstance(discounts, list):
+            raise ValueError(f"Invalid discounts for {path.name}")
+
+        total_paid += subtotal + rounding
+        total_without_discount += subtotal + sum(
+            (abs(money(value)) for value in discounts), Decimal("0.00")
+        )
+
+    return {
+        QUERY_1: f"HK${total_paid:.2f}",
+        QUERY_2: f"HK${total_without_discount:.2f}",
+    }
+
+
+
 
 
 # Everything below is provided runner/scoring code. No edits are needed.
